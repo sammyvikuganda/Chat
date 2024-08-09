@@ -3,6 +3,7 @@ const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, onValue, push } = require('firebase/database');
 const cors = require('cors');
 
+// Initialize Express app
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -19,7 +20,7 @@ const firebaseConfig = {
   token_uri: process.env.FIREBASE_TOKEN_URI,
   auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
   client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
-  databaseURL: 'https://chat-aac94-default-rtdb.firebaseio.com' // Add the database URL here
+  databaseURL: 'https://chat-aac94-default-rtdb.firebaseio.com'
 };
 
 // Initialize Firebase
@@ -35,6 +36,8 @@ app.get('/messages', (req, res) => {
       messages.push(childSnapshot.val());
     });
     res.json(messages);
+  }, {
+    onlyOnce: true // Fetch messages only once
   });
 });
 
@@ -59,4 +62,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
