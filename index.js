@@ -47,20 +47,37 @@ app.use('/api/messages', (req, res) => {
     if (req.method === 'GET') {
       const userId = req.query.userId;
       if (!userId) {
-        return res.status(400).send('User ID is required');
-      }
-
-      try {
-        const messagesRef = db.ref(`Users/${userId}`);
-        const snapshot = await messagesRef.once('value');
-        const messages = [];
-        snapshot.forEach(childSnapshot => {
-          messages.push({ id: childSnapshot.key, ...childSnapshot.val() });
-        });
-        res.status(200).json(messages);
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-        res.status(500).send('Error fetching messages');
+        // If no specific userId is provided, fetch messages for all users
+        try {
+          const usersRef = db.ref('Users');
+          const snapshot = await usersRef.once('value');
+          const users = [];
+          snapshot.forEach(userSnapshot => {
+            const userId = userSnapshot.key;
+            const userMessages = [];
+            userSnapshot.forEach(messageSnapshot => {
+              userMessages.push({ id: messageSnapshot.key, ...messageSnapshot.val() });
+            });
+            users.push({ userId, messages: userMessages });
+          });
+          res.status(200).json(users);
+        } catch (error) {
+          console.error('Error fetching messages:', error);
+          res.status(500).send('Error fetching messages');
+        }
+      } else {
+        try {
+          const messagesRef = db.ref(`Users/${userId}`);
+          const snapshot = await messagesRef.once('value');
+          const messages = [];
+          snapshot.forEach(childSnapshot => {
+            messages.push({ id: childSnapshot.key, ...childSnapshot.val() });
+          });
+          res.status(200).json(messages);
+        } catch (error) {
+          console.error('Error fetching messages:', error);
+          res.status(500).send('Error fetching messages');
+        }
       }
     } else if (req.method === 'POST') {
       const { sender, text, replyTo } = req.body;
