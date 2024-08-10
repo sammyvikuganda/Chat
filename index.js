@@ -51,7 +51,7 @@ app.use('/api/messages', (req, res) => {
         const snapshot = await messagesRef.once('value');
         const messages = [];
         snapshot.forEach(childSnapshot => {
-          messages.push(childSnapshot.val());
+          messages.push({ id: childSnapshot.key, ...childSnapshot.val() });
         });
         res.status(200).json(messages);
       } catch (error) {
