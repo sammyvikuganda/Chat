@@ -44,56 +44,62 @@ app.get('/', (req, res) => {
 // API route for handling messages
 app.use('/api/messages', (req, res) => {
   corsHandler(req, res, async () => {
-    const { userId } = req.query || req.body;
-
-    if (!userId) {
-      return res.status(400).send('User ID is required');
-    }
-
-    const userRef = db.ref(`Users/${userId}`);
-
     if (req.method === 'GET') {
-      // Fetch messages
+      const userId = req.query.userId;
+      if (!userId) {
+        return res.status(400).send('User ID is required');
+      }
+
       try {
-        const snapshot = await userRef.once('value');
-        const messages = snapshot.val() || {};
+        const messagesRef = db.ref(`Users/${userId}`);
+        const snapshot = await messagesRef.once('value');
+        const messages = [];
+        snapshot.forEach(childSnapshot => {
+          messages.push({ id: childSnapshot.key, ...childSnapshot.val() });
+        });
         res.status(200).json(messages);
       } catch (error) {
         console.error('Error fetching messages:', error);
         res.status(500).send('Error fetching messages');
       }
     } else if (req.method === 'POST') {
-      // Send a new message or reply
       const { sender, text, replyTo } = req.body;
-
-      if (!sender || !text) {
-        return res.status(400).send('Sender and text are required');
+      const userId = req.query.userId;
+      if (!userId) {
+        return res.status(400).send('User ID is required');
       }
 
+      const messagesRef = db.ref(`Users/${userId}`);
+      
       try {
-        // Determine if it's a client message or an admin reply
-        const messageType = sender === 'Marvin' ? 'reply' : 'message';
-        const messageTypeRef = userRef.child(messageType + 'Count');
-
-        // Get the current count for the message type
-        const countSnapshot = await messageTypeRef.once('value');
-        const currentCount = countSnapshot.val() || 0;
-
-        // Increment the count
-        await messageTypeRef.set(currentCount + 1);
-
-        // Store the message with text, timestamp, and type
-        const messageRef = userRef.child(`${messageType}${currentCount + 1}`);
-        await messageRef.set({
-          text: text,
-          timestamp: new Date().toISOString(),
-          type: sender === 'Marvin' ? 'admin' : 'client'
-        });
-
-        res.status(200).send('Message sent');
+        if (replyTo) {
+          // Reply to an existing message
+          const messageRef = messagesRef.child(replyTo);
+          const messageSnapshot = await messageRef.once('value');
+          if (messageSnapshot.exists()) {
+            await messageRef.child('replies').push({
+              sender: sender,
+              text: text,
+              timestamp: new Date().toISOString()
+            });
+            res.status(200).send('Reply sent');
+          } else {
+            res.status(404).send('Message to reply to not found');
+          }
+        } else {
+          // Send a new message
+          const newMessageRef = messagesRef.push();
+          await newMessageRef.set({
+            sender: sender,
+            text: text,
+            timestamp: new Date().toISOString(),
+            replies: {} // Initialize replies as an empty object
+          });
+          res.status(200).send('Message sent');
+        }
       } catch (error) {
         console.error('Error sending message:', error);
-        res.status(500).send('Error sending message');
+        res.status(500).send('Error sending message: ' + error.message);
       }
     } else {
       res.setHeader('Allow', ['GET', 'POST']);
