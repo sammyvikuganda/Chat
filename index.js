@@ -1,6 +1,6 @@
 const express = require('express');
 const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, onValue, push } = require('firebase/database');
+const { getDatabase, ref, push } = require('firebase/database');
 const cors = require('cors');
 
 const app = express();
@@ -11,7 +11,7 @@ app.use(express.json());
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  databaseURL: 'https://chat-aac94-default-rtdb.firebaseio.com', // Your Firebase Database URL
+  databaseURL: process.env.FIREBASE_DATABASE_URL,
   projectId: process.env.FIREBASE_PROJECT_ID,
   storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
@@ -28,20 +28,6 @@ app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
 });
 
-// Fetch messages
-app.get('/messages', (req, res) => {
-  const messagesRef = ref(database, 'chats/chatId1');
-  onValue(messagesRef, (snapshot) => {
-    const messages = [];
-    snapshot.forEach(childSnapshot => {
-      messages.push(childSnapshot.val());
-    });
-    res.json(messages);
-  }, {
-    onlyOnce: true
-  });
-});
-
 // Send a new message
 app.post('/messages', (req, res) => {
   const { sender, text } = req.body;
@@ -54,7 +40,7 @@ app.post('/messages', (req, res) => {
   }).then(() => {
     res.status(200).send('Message sent');
   }).catch(error => {
-    res.status(500).send(error.message);
+    res.status(500).send(`Error: ${error.message}`);
   });
 });
 
@@ -63,4 +49,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
