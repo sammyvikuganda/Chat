@@ -4,12 +4,14 @@ const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware to parse JSON bodies and configure CORS
+// Middleware to parse JSON bodies
 app.use(express.json());
-app.use(cors({
+
+// Configure CORS
+const corsHandler = cors({
   origin: '*',
   methods: ['GET', 'POST'],
-}));
+});
 
 // Initialize Firebase Admin SDK with environment variables
 const serviceAccount = {
@@ -40,51 +42,64 @@ app.get('/', (req, res) => {
 });
 
 // API route for handling messages
-app.use('/api/messages', async (req, res) => {
-  const { userId } = req.query || req.body;
+app.use('/api/messages', (req, res) => {
+  corsHandler(req, res, async () => {
+    const { userId } = req.query || req.body;
 
-  if (!userId) {
-    return res.status(400).send('User ID is required');
-  }
-
-  const userRef = db.ref(`Users/${userId}`);
-
-  if (req.method === 'GET') {
-    // Fetch messages
-    try {
-      const snapshot = await userRef.once('value');
-      const messages = snapshot.val() || {};
-      res.status(200).json(messages);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-      res.status(500).send('Error fetching messages');
-    }
-  } else if (req.method === 'POST') {
-    // Send a new message or reply
-    const { sender, text } = req.body;
-
-    if (!sender || !text) {
-      return res.status(400).send('Sender and text are required');
+    if (!userId) {
+      return res.status(400).send('User ID is required');
     }
 
-    try {
-      // Create a new message ID
-      const newMessageRef = userRef.push();
-      await newMessageRef.set({
-        text: text,
-        timestamp: new Date().toISOString(),
-        type: sender === 'Marvin' ? 'admin' : 'client'
-      });
+    const userRef = db.ref(`Users/${userId}`);
 
-      res.status(200).send('Message sent');
-    } catch (error) {
-      console.error('Error sending message:', error);
-      res.status(500).send('Error sending message');
+    if (req.method === 'GET') {
+      // Fetch messages
+      try {
+        const snapshot = await userRef.once('value');
+        const messages = snapshot.val() || {};
+        res.status(200).json(messages);
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+        res.status(500).send('Error fetching messages');
+      }
+    } else if (req.method === 'POST') {
+      // Send a new message or reply
+      const { sender, text, replyTo } = req.body;
+
+      if (!sender || !text) {
+        return res.status(400).send('Sender and text are required');
+      }
+
+      try {
+        // Determine if it's a client message or an admin reply
+        const messageType = sender === 'Marvin' ? 'reply' : 'message';
+        const messageTypeRef = userRef.child(messageType + 'Count');
+
+        // Get the current count for the message type
+        const countSnapshot = await messageTypeRef.once('value');
+        const currentCount = countSnapshot.val() || 0;
+
+        // Increment the count
+        await messageTypeRef.set(currentCount + 1);
+
+        // Store the message with text, timestamp, and type
+        const messageRef = userRef.child(`${messageType}${currentCount + 1}`);
+        await messageRef.set({
+          text: text,
+          timestamp: new Date().toISOString(),
+          type: sender === 'Marvin' ? 'admin' : 'client'
+        });
+
+        res.status(200).send('Message sent');
+      } catch (error) {
+        console.error('Error sending message:', error);
+        res.status(500).send('Error sending message');
+      }
+    } else {
+      res.setHeader('Allow', ['GET', 'POST']);
+      res.status(405).end(`Method ${req.method} Not Allowed`);
     }
-  } else {
-    res.setHeader('Allow', ['GET', 'POST']);
-    res.status(405).end(`Method ${req.method} Not Allowed`);
-  }
+  });
 });
 
 // Start the server (for local testing)
