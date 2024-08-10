@@ -1,27 +1,32 @@
 const express = require('express');
-const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, onValue, push, query, orderByChild, equalTo } = require('firebase/database');
+const admin = require('firebase-admin');
 const cors = require('cors');
 
+// Initialize Express app
 const app = express();
 app.use(cors()); // Enable CORS
 app.use(express.json());
 
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  databaseURL: 'https://chat-aac94-default-rtdb.firebaseio.com', // Your Firebase Realtime Database URL
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID
+// Initialize Firebase Admin SDK with environment variables
+const serviceAccount = {
+  type: 'service_account',
+  project_id: process.env.FIREBASE_PROJECT_ID,
+  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+  private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  client_id: process.env.FIREBASE_CLIENT_ID,
+  auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+  token_uri: 'https://oauth2.googleapis.com/token',
+  auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
+  client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
 };
 
-// Initialize Firebase
-const firebaseApp = initializeApp(firebaseConfig);
-const database = getDatabase(firebaseApp);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: process.env.FIREBASE_DATABASE_URL
+});
+
+const db = admin.database();
 
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
@@ -29,41 +34,38 @@ app.get('/', (req, res) => {
 });
 
 // Fetch messages
-app.get('/messages', (req, res) => {
-  const { sender } = req.query; // Get sender name from query parameters
-  const messagesRef = ref(database, 'chats/chatId1');
-  
-  let messagesQuery = messagesRef;
-  if (sender) {
-    // Filter messages by sender's name
-    messagesQuery = query(messagesRef, orderByChild('sender'), equalTo(sender));
-  }
-  
-  onValue(messagesQuery, (snapshot) => {
+app.get('/messages', async (req, res) => {
+  try {
+    const messagesRef = db.ref('chats/chatId1');
+    const snapshot = await messagesRef.once('value');
     const messages = [];
     snapshot.forEach(childSnapshot => {
       messages.push(childSnapshot.val());
     });
     res.json(messages);
-  }, {
-    onlyOnce: true
-  });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).send('Error fetching messages');
+  }
 });
 
 // Send a new message
-app.post('/messages', (req, res) => {
+app.post('/messages', async (req, res) => {
   const { sender, text } = req.body;
-  const messagesRef = ref(database, 'chats/chatId1');
-  const newMessageRef = push(messagesRef);
-  newMessageRef.set({
-    sender: sender,
-    text: text,
-    timestamp: new Date().toISOString()
-  }).then(() => {
+  const messagesRef = db.ref('chats/chatId1');
+  
+  try {
+    const newMessageRef = messagesRef.push();
+    await newMessageRef.set({
+      sender: sender,
+      text: text,
+      timestamp: new Date().toISOString()
+    });
     res.status(200).send('Message sent');
-  }).catch(error => {
-    res.status(500).send(error.message);
-  });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).send('Error sending message: ' + error.message);
+  }
 });
 
 // Start the server
