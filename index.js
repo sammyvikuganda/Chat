@@ -1,6 +1,6 @@
 const express = require('express');
 const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, push } = require('firebase/database');
+const { getDatabase, ref, onValue, push } = require('firebase/database');
 const cors = require('cors');
 
 const app = express();
@@ -28,9 +28,29 @@ app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
 });
 
+// Fetch messages
+app.get('/messages', (req, res) => {
+  const messagesRef = ref(database, 'chats/chatId1');
+  onValue(messagesRef, (snapshot) => {
+    const messages = [];
+    snapshot.forEach(childSnapshot => {
+      messages.push(childSnapshot.val());
+    });
+    res.json(messages);
+  }, {
+    onlyOnce: true
+  });
+});
+
 // Send a new message
 app.post('/messages', (req, res) => {
   const { sender, text } = req.body;
+  console.log('Received data:', { sender, text });
+
+  if (!sender || !text) {
+    return res.status(400).send('Sender and text are required');
+  }
+
   const messagesRef = ref(database, 'chats/chatId1');
   const newMessageRef = push(messagesRef);
   newMessageRef.set({
@@ -40,7 +60,8 @@ app.post('/messages', (req, res) => {
   }).then(() => {
     res.status(200).send('Message sent');
   }).catch(error => {
-    res.status(500).send(`Error: ${error.message}`);
+    console.error('Error sending message:', error);
+    res.status(500).send('Error sending message');
   });
 });
 
