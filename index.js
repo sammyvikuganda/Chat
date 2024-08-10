@@ -1,6 +1,6 @@
 const express = require('express');
 const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, onValue, push } = require('firebase/database');
+const { getDatabase, ref, onValue, push, query, orderByChild, equalTo } = require('firebase/database');
 const cors = require('cors');
 
 const app = express();
@@ -11,7 +11,7 @@ app.use(express.json());
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.FIREBASE_DATABASE_URL,
+  databaseURL: 'https://chat-aac94-default-rtdb.firebaseio.com', // Your Firebase Realtime Database URL
   projectId: process.env.FIREBASE_PROJECT_ID,
   storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
@@ -30,8 +30,16 @@ app.get('/', (req, res) => {
 
 // Fetch messages
 app.get('/messages', (req, res) => {
+  const { sender } = req.query; // Get sender name from query parameters
   const messagesRef = ref(database, 'chats/chatId1');
-  onValue(messagesRef, (snapshot) => {
+  
+  let messagesQuery = messagesRef;
+  if (sender) {
+    // Filter messages by sender's name
+    messagesQuery = query(messagesRef, orderByChild('sender'), equalTo(sender));
+  }
+  
+  onValue(messagesQuery, (snapshot) => {
     const messages = [];
     snapshot.forEach(childSnapshot => {
       messages.push(childSnapshot.val());
@@ -45,12 +53,6 @@ app.get('/messages', (req, res) => {
 // Send a new message
 app.post('/messages', (req, res) => {
   const { sender, text } = req.body;
-  console.log('Received data:', { sender, text });
-
-  if (!sender || !text) {
-    return res.status(400).send('Sender and text are required');
-  }
-
   const messagesRef = ref(database, 'chats/chatId1');
   const newMessageRef = push(messagesRef);
   newMessageRef.set({
@@ -60,8 +62,7 @@ app.post('/messages', (req, res) => {
   }).then(() => {
     res.status(200).send('Message sent');
   }).catch(error => {
-    console.error('Error sending message:', error);
-    res.status(500).send('Error sending message');
+    res.status(500).send(error.message);
   });
 });
 
