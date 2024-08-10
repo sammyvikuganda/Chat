@@ -59,18 +59,36 @@ app.use('/api/messages', (req, res) => {
         res.status(500).send('Error fetching messages');
       }
     } else if (req.method === 'POST') {
-      // Send a new message
-      const { sender, text } = req.body;
+      // Send a new message or reply
+      const { sender, text, replyTo } = req.body;
       const messagesRef = db.ref('chats/chatId1');
       
       try {
-        const newMessageRef = messagesRef.push();
-        await newMessageRef.set({
-          sender: sender,
-          text: text,
-          timestamp: new Date().toISOString()
-        });
-        res.status(200).send('Message sent');
+        if (replyTo) {
+          // Reply to an existing message
+          const messageRef = messagesRef.child(replyTo);
+          const messageSnapshot = await messageRef.once('value');
+          if (messageSnapshot.exists()) {
+            await messageRef.child('replies').push({
+              sender: sender,
+              text: text,
+              timestamp: new Date().toISOString()
+            });
+            res.status(200).send('Reply sent');
+          } else {
+            res.status(404).send('Message to reply to not found');
+          }
+        } else {
+          // Send a new message
+          const newMessageRef = messagesRef.push();
+          await newMessageRef.set({
+            sender: sender,
+            text: text,
+            timestamp: new Date().toISOString(),
+            replies: {} // Initialize replies as an empty object
+          });
+          res.status(200).send('Message sent');
+        }
       } catch (error) {
         console.error('Error sending message:', error);
         res.status(500).send('Error sending message: ' + error.message);
