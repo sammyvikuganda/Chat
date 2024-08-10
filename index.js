@@ -4,9 +4,10 @@ const { getDatabase, ref, onValue, push } = require('firebase/database');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Enable CORS
 app.use(express.json());
 
+// Firebase configuration
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -18,6 +19,7 @@ const firebaseConfig = {
   measurementId: process.env.FIREBASE_MEASUREMENT_ID
 };
 
+// Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
 const database = getDatabase(firebaseApp);
 
@@ -56,6 +58,7 @@ app.post('/messages', (req, res) => {
   });
 });
 
+// Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
