@@ -1,8 +1,6 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -12,7 +10,7 @@ app.use(express.json());
 // Configure CORS
 const corsHandler = cors({
   origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST'],
 });
 
 // Initialize Firebase Admin SDK with environment variables
@@ -32,17 +30,11 @@ const serviceAccount = {
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL,
-    storageBucket: process.env.FIREBASE_BUCKET_NAME
+    databaseURL: process.env.FIREBASE_DATABASE_URL
   });
 }
 
 const db = admin.database();
-const bucket = admin.storage().bucket(process.env.FIREBASE_BUCKET_NAME);
-
-// Configure Multer for file uploads
-const multerStorage = multer.memoryStorage();
-const upload = multer({ storage: multerStorage });
 
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
@@ -55,6 +47,7 @@ app.use('/api/messages', (req, res) => {
     if (req.method === 'GET') {
       const userId = req.query.userId;
       if (!userId) {
+        // If no specific userId is provided, fetch messages for all users
         try {
           const usersRef = db.ref('Users');
           const snapshot = await usersRef.once('value');
@@ -87,7 +80,7 @@ app.use('/api/messages', (req, res) => {
         }
       }
     } else if (req.method === 'POST') {
-      const { sender, text, replyTo, imageUrl } = req.body;
+      const { sender, text, replyTo } = req.body;
       const userId = req.query.userId;
       if (!userId) {
         return res.status(400).send('User ID is required');
@@ -97,13 +90,13 @@ app.use('/api/messages', (req, res) => {
       
       try {
         if (replyTo) {
+          // Reply to an existing message
           const messageRef = messagesRef.child(replyTo);
           const messageSnapshot = await messageRef.once('value');
           if (messageSnapshot.exists()) {
             await messageRef.child('replies').push({
               sender: sender,
               text: text,
-              imageUrl: imageUrl,
               timestamp: new Date().toISOString()
             });
             res.status(200).send('Reply sent');
@@ -111,13 +104,13 @@ app.use('/api/messages', (req, res) => {
             res.status(404).send('Message to reply to not found');
           }
         } else {
+          // Send a new message
           const newMessageRef = messagesRef.push();
           await newMessageRef.set({
             sender: sender,
             text: text,
-            imageUrl: imageUrl,
             timestamp: new Date().toISOString(),
-            replies: {}
+            replies: {} // Initialize replies as an empty object
           });
           res.status(200).send('Message sent');
         }
@@ -130,37 +123,6 @@ app.use('/api/messages', (req, res) => {
       res.status(405).end(`Method ${req.method} Not Allowed`);
     }
   });
-});
-
-// API route for uploading images
-app.post('/api/upload', upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).send('No file uploaded');
-  }
-
-  try {
-    const blob = bucket.file(`images/${Date.now()}_${req.file.originalname}`); // Save to 'images/' folder with unique filename
-    const blobStream = blob.createWriteStream({
-      metadata: {
-        contentType: req.file.mimetype
-      }
-    });
-
-    blobStream.on('error', (err) => {
-      console.error('Error uploading file:', err);
-      res.status(500).send('Error uploading file');
-    });
-
-    blobStream.on('finish', async () => {
-      const url = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
-      res.status(200).json({ imageUrl: url });
-    });
-
-    blobStream.end(req.file.buffer);
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    res.status(500).send('Error uploading file');
-  }
 });
 
 // Start the server (for local testing)
