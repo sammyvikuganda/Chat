@@ -1,9 +1,8 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
-const { Storage } = require('@google-cloud/storage');
+const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -13,7 +12,7 @@ app.use(express.json());
 // Configure CORS
 const corsHandler = cors({
   origin: '*',
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
 });
 
 // Initialize Firebase Admin SDK with environment variables
@@ -33,56 +32,21 @@ const serviceAccount = {
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+    databaseURL: process.env.FIREBASE_DATABASE_URL,
+    storageBucket: process.env.FIREBASE_BUCKET_NAME
   });
 }
 
 const db = admin.database();
+const bucket = admin.storage().bucket(process.env.FIREBASE_BUCKET_NAME);
 
-// Initialize Firebase Storage
-const storage = new Storage({
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  keyFilename: 'path/to/your/serviceAccountKey.json', // Path to your Firebase Admin SDK service account file
-});
-const bucket = storage.bucket(process.env.FIREBASE_STORAGE_BUCKET);
+// Configure Multer for file uploads
+const multerStorage = multer.memoryStorage();
+const upload = multer({ storage: multerStorage });
 
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
-});
-
-// Route to handle image uploads
-app.post('/api/upload', (req, res) => {
-  if (!req.headers['content-type'].startsWith('multipart/form-data')) {
-    return res.status(400).send('Invalid Content-Type');
-  }
-
-  let fileData = Buffer.from('');
-  req.on('data', chunk => {
-    fileData = Buffer.concat([fileData, chunk]);
-  });
-
-  req.on('end', async () => {
-    try {
-      const fileName = `uploads/${Date.now()}_${Math.random().toString(36).substr(2)}.jpg`;
-      const filePath = path.join(__dirname, fileName);
-      
-      fs.writeFileSync(filePath, fileData);
-
-      await bucket.upload(filePath, {
-        destination: fileName,
-        public: true
-      });
-
-      fs.unlinkSync(filePath);
-
-      const imageUrl = `https://storage.googleapis.com/${process.env.FIREBASE_STORAGE_BUCKET}/${fileName}`;
-      res.status(200).json({ imageUrl });
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      res.status(500).send('Error uploading image');
-    }
-  });
 });
 
 // API route for handling messages
@@ -91,7 +55,6 @@ app.use('/api/messages', (req, res) => {
     if (req.method === 'GET') {
       const userId = req.query.userId;
       if (!userId) {
-        // If no specific userId is provided, fetch messages for all users
         try {
           const usersRef = db.ref('Users');
           const snapshot = await usersRef.once('value');
@@ -124,7 +87,7 @@ app.use('/api/messages', (req, res) => {
         }
       }
     } else if (req.method === 'POST') {
-      const { sender, text, replyTo, imageUrl } = req.body; // Add imageUrl
+      const { sender, text, replyTo, imageUrl } = req.body;
       const userId = req.query.userId;
       if (!userId) {
         return res.status(400).send('User ID is required');
@@ -134,14 +97,13 @@ app.use('/api/messages', (req, res) => {
       
       try {
         if (replyTo) {
-          // Reply to an existing message
           const messageRef = messagesRef.child(replyTo);
           const messageSnapshot = await messageRef.once('value');
           if (messageSnapshot.exists()) {
             await messageRef.child('replies').push({
               sender: sender,
               text: text,
-              imageUrl: imageUrl, // Add image URL to replies
+              imageUrl: imageUrl,
               timestamp: new Date().toISOString()
             });
             res.status(200).send('Reply sent');
@@ -149,14 +111,13 @@ app.use('/api/messages', (req, res) => {
             res.status(404).send('Message to reply to not found');
           }
         } else {
-          // Send a new message
           const newMessageRef = messagesRef.push();
           await newMessageRef.set({
             sender: sender,
             text: text,
-            imageUrl: imageUrl, // Add image URL to new message
+            imageUrl: imageUrl,
             timestamp: new Date().toISOString(),
-            replies: {} // Initialize replies as an empty object
+            replies: {}
           });
           res.status(200).send('Message sent');
         }
@@ -171,6 +132,37 @@ app.use('/api/messages', (req, res) => {
   });
 });
 
+// API route for uploading images
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No file uploaded');
+  }
+
+  try {
+    const blob = bucket.file(req.file.originalname);
+    const blobStream = blob.createWriteStream({
+      metadata: {
+        contentType: req.file.mimetype
+      }
+    });
+
+    blobStream.on('error', (err) => {
+      console.error('Error uploading file:', err);
+      res.status(500).send('Error uploading file');
+    });
+
+    blobStream.on('finish', async () => {
+      const url = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
+      res.status(200).json({ imageUrl: url });
+    });
+
+    blobStream.end(req.file.buffer);
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    res.status(500).send('Error uploading file');
+  }
+});
+
 // Start the server (for local testing)
 if (require.main === module) {
   app.listen(port, () => {
@@ -180,4 +172,3 @@ if (require.main === module) {
 
 // Export the Express app
 module.exports = app;
-
