@@ -139,7 +139,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 
   try {
-    const blob = bucket.file(req.file.originalname);
+    const blob = bucket.file(`images/${Date.now()}_${req.file.originalname}`); // Save to 'images/' folder with unique filename
     const blobStream = blob.createWriteStream({
       metadata: {
         contentType: req.file.mimetype
