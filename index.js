@@ -1,6 +1,9 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -8,10 +11,11 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 
 // Configure CORS
-const corsHandler = cors({
+app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST'],
-});
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 // Initialize Firebase Admin SDK with environment variables
 const serviceAccount = {
@@ -35,6 +39,29 @@ if (!admin.apps.length) {
 }
 
 const db = admin.database();
+
+// Configure Multer for file uploads
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, 'uploads/'); // Ensure this folder exists or create it
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${uuidv4()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 } // Limit file size to 5MB
+});
+
+// Route to handle image uploads
+app.post('/api/upload', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No file uploaded.');
+  }
+  const imageUrl = `https://yourdomain.com/uploads/${req.file.filename}`;
+  res.status(200).json({ imageUrl });
+});
 
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
