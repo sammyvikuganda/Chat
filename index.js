@@ -1,9 +1,9 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
-const multer = require('multer');
+const { Storage } = require('@google-cloud/storage');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -11,11 +11,10 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 
 // Configure CORS
-app.use(cors({
+const corsHandler = cors({
   origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
-}));
+  methods: ['GET', 'POST'],
+});
 
 // Initialize Firebase Admin SDK with environment variables
 const serviceAccount = {
@@ -40,32 +39,50 @@ if (!admin.apps.length) {
 
 const db = admin.database();
 
-// Configure Multer for file uploads
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, 'uploads/'); // Ensure this folder exists or create it
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname);
-      cb(null, `${uuidv4()}${ext}`);
-    }
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 } // Limit file size to 5MB
+// Initialize Firebase Storage
+const storage = new Storage({
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  keyFilename: 'path/to/your/serviceAccountKey.json', // Path to your Firebase Admin SDK service account file
 });
-
-// Route to handle image uploads
-app.post('/api/upload', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).send('No file uploaded.');
-  }
-  const imageUrl = `https://yourdomain.com/uploads/${req.file.filename}`;
-  res.status(200).json({ imageUrl });
-});
+const bucket = storage.bucket(process.env.FIREBASE_STORAGE_BUCKET);
 
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
+});
+
+// Route to handle image uploads
+app.post('/api/upload', (req, res) => {
+  if (!req.headers['content-type'].startsWith('multipart/form-data')) {
+    return res.status(400).send('Invalid Content-Type');
+  }
+
+  let fileData = Buffer.from('');
+  req.on('data', chunk => {
+    fileData = Buffer.concat([fileData, chunk]);
+  });
+
+  req.on('end', async () => {
+    try {
+      const fileName = `uploads/${Date.now()}_${Math.random().toString(36).substr(2)}.jpg`;
+      const filePath = path.join(__dirname, fileName);
+      
+      fs.writeFileSync(filePath, fileData);
+
+      await bucket.upload(filePath, {
+        destination: fileName,
+        public: true
+      });
+
+      fs.unlinkSync(filePath);
+
+      const imageUrl = `https://storage.googleapis.com/${process.env.FIREBASE_STORAGE_BUCKET}/${fileName}`;
+      res.status(200).json({ imageUrl });
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      res.status(500).send('Error uploading image');
+    }
+  });
 });
 
 // API route for handling messages
@@ -107,7 +124,7 @@ app.use('/api/messages', (req, res) => {
         }
       }
     } else if (req.method === 'POST') {
-      const { sender, text, replyTo } = req.body;
+      const { sender, text, replyTo, imageUrl } = req.body; // Add imageUrl
       const userId = req.query.userId;
       if (!userId) {
         return res.status(400).send('User ID is required');
@@ -124,6 +141,7 @@ app.use('/api/messages', (req, res) => {
             await messageRef.child('replies').push({
               sender: sender,
               text: text,
+              imageUrl: imageUrl, // Add image URL to replies
               timestamp: new Date().toISOString()
             });
             res.status(200).send('Reply sent');
@@ -136,6 +154,7 @@ app.use('/api/messages', (req, res) => {
           await newMessageRef.set({
             sender: sender,
             text: text,
+            imageUrl: imageUrl, // Add image URL to new message
             timestamp: new Date().toISOString(),
             replies: {} // Initialize replies as an empty object
           });
@@ -161,3 +180,4 @@ if (require.main === module) {
 
 // Export the Express app
 module.exports = app;
+
