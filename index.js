@@ -131,9 +131,5 @@ app.get('/api/messages/:phoneNumber', async (req, res) => {
   }
 });
 
-// Start the server (for local testing)
-if (require.main === module) {
-  app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-  });
-}
+// Export the Express app (for serverless environments)
+module.exports = app;
