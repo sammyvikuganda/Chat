@@ -7,11 +7,8 @@ const port = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Configure CORS
-const corsHandler = cors({
-  origin: '*',
-  methods: ['GET', 'POST'],
-});
+// Use the default CORS configuration (allows all origins and basic methods)
+app.use(cors());
 
 // Initialize Firebase Admin SDK with environment variables
 const serviceAccount = {
@@ -41,88 +38,97 @@ app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
 });
 
-// API route for handling messages
-app.use('/api/messages', (req, res) => {
-  corsHandler(req, res, async () => {
-    if (req.method === 'GET') {
-      const userId = req.query.userId;
-      if (!userId) {
-        // If no specific userId is provided, fetch messages for all users
-        try {
-          const usersRef = db.ref('Users');
-          const snapshot = await usersRef.once('value');
-          const users = [];
-          snapshot.forEach(userSnapshot => {
-            const userId = userSnapshot.key;
-            const userMessages = [];
-            userSnapshot.forEach(messageSnapshot => {
-              userMessages.push({ id: messageSnapshot.key, ...messageSnapshot.val() });
-            });
-            users.push({ userId, messages: userMessages });
-          });
-          res.status(200).json(users);
-        } catch (error) {
-          console.error('Error fetching messages:', error);
-          res.status(500).send('Error fetching messages');
-        }
-      } else {
-        try {
-          const messagesRef = db.ref(`Users/${userId}`);
-          const snapshot = await messagesRef.once('value');
-          const messages = [];
-          snapshot.forEach(childSnapshot => {
-            messages.push({ id: childSnapshot.key, ...childSnapshot.val() });
-          });
-          res.status(200).json(messages);
-        } catch (error) {
-          console.error('Error fetching messages:', error);
-          res.status(500).send('Error fetching messages');
-        }
-      }
-    } else if (req.method === 'POST') {
-      const { sender, text, replyTo } = req.body;
-      const userId = req.query.userId;
-      if (!userId) {
-        return res.status(400).send('User ID is required');
-      }
+// Registration route for new users
+app.post('/api/register', async (req, res) => {
+  const { phoneNumber, password } = req.body;
 
-      const messagesRef = db.ref(`Users/${userId}`);
-      
-      try {
-        if (replyTo) {
-          // Reply to an existing message
-          const messageRef = messagesRef.child(replyTo);
-          const messageSnapshot = await messageRef.once('value');
-          if (messageSnapshot.exists()) {
-            await messageRef.child('replies').push({
-              sender: sender,
-              text: text,
-              timestamp: new Date().toISOString()
-            });
-            res.status(200).send('Reply sent');
-          } else {
-            res.status(404).send('Message to reply to not found');
-          }
-        } else {
-          // Send a new message
-          const newMessageRef = messagesRef.push();
-          await newMessageRef.set({
-            sender: sender,
-            text: text,
-            timestamp: new Date().toISOString(),
-            replies: {} // Initialize replies as an empty object
-          });
-          res.status(200).send('Message sent');
-        }
-      } catch (error) {
-        console.error('Error sending message:', error);
-        res.status(500).send('Error sending message: ' + error.message);
-      }
-    } else {
-      res.setHeader('Allow', ['GET', 'POST']);
-      res.status(405).end(`Method ${req.method} Not Allowed`);
+  if (!phoneNumber || !password) {
+    return res.status(400).send('Phone number and password are required');
+  }
+
+  // Validate phone number format (you can enhance this)
+  const phoneNumberRegex = /^[0-9]{10}$/;
+  if (!phoneNumberRegex.test(phoneNumber)) {
+    return res.status(400).send('Invalid phone number format');
+  }
+
+  try {
+    // Use the phone number as the user ID in the database
+    const userRef = db.ref('Users').child(phoneNumber); // Using phone number as the unique ID
+    await userRef.set({
+      phoneNumber: phoneNumber,
+      password: password // Storing plain password (not recommended)
+    });
+
+    res.status(201).send('User registered successfully');
+  } catch (error) {
+    console.error('Error registering user:', error);
+    res.status(500).send('Error registering user');
+  }
+});
+
+// Message route to send messages
+app.post('/api/messages', async (req, res) => {
+  const { to, from, message } = req.body;
+
+  if (!to || !from || !message) {
+    return res.status(400).send('To, from, and message fields are required');
+  }
+
+  try {
+    // Store message under the "messages" node for the sending user (from) and receiving user (to)
+    const fromRef = db.ref('Users').child(from).child('messages');
+    const toRef = db.ref('Users').child(to).child('messages');
+
+    const newMessageRefFrom = fromRef.push();
+    const newMessageRefTo = toRef.push();
+
+    const messageData = {
+      to: to,
+      from: from,
+      message: message,
+      timestamp: new Date().toISOString(), // Timestamp for when the message was sent
+    };
+
+    await newMessageRefFrom.set(messageData);
+    await newMessageRefTo.set(messageData);
+
+    res.status(201).send('Message sent successfully');
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).send('Error sending message');
+  }
+});
+
+// Endpoint to fetch messages for a specific user
+app.get('/api/messages/:phoneNumber', async (req, res) => {
+  const { phoneNumber } = req.params;
+
+  if (!phoneNumber) {
+    return res.status(400).send('Phone number is required');
+  }
+
+  try {
+    // Reference to the user's messages in the database
+    const userMessagesRef = db.ref('Users').child(phoneNumber).child('messages');
+
+    // Get all messages for the user
+    const snapshot = await userMessagesRef.once('value');
+    const messages = [];
+
+    snapshot.forEach((childSnapshot) => {
+      messages.push({ id: childSnapshot.key, ...childSnapshot.val() });
+    });
+
+    if (messages.length === 0) {
+      return res.status(404).send('No messages found for this user');
     }
-  });
+
+    res.status(200).json(messages);
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).send('Error fetching messages');
+  }
 });
 
 // Start the server (for local testing)
@@ -131,6 +137,3 @@ if (require.main === module) {
     console.log(`Server is running on port ${port}`);
   });
 }
-
-// Export the Express app
-module.exports = app;
