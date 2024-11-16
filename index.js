@@ -1,6 +1,7 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -40,6 +41,7 @@ app.get('/', (req, res) => {
 
 // Registration route for new users
 app.post('/api/register', async (req, res) => {
+  console.log('Register API hit');
   const { phoneNumber, password } = req.body;
 
   if (!phoneNumber || !password) {
@@ -61,10 +63,13 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).send('User already exists');
     }
 
+    // Hash the password before storing it
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     // Store user in the database
     await userRef.set({
       phoneNumber: phoneNumber,
-      password: password, // Storing plain password (not recommended)
+      password: hashedPassword, // Store hashed password
       onlineStatus: 'offline',
       lastSeen: null
     });
@@ -93,7 +98,10 @@ app.post('/api/login', async (req, res) => {
     }
 
     const user = snapshot.val();
-    if (user.password !== password) {
+    // Compare the provided password with the stored hashed password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
       return res.status(401).send('Invalid password');
     }
 
@@ -211,3 +219,10 @@ app.get('/api/messages/:phoneNumber', async (req, res) => {
 
 // Export the Express app (for serverless environments)
 module.exports = app;
+
+// Start server for local testing
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
