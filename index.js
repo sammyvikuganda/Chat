@@ -53,17 +53,95 @@ app.post('/api/register', async (req, res) => {
   }
 
   try {
-    // Use the phone number as the user ID in the database
-    const userRef = db.ref('Users').child(phoneNumber); // Using phone number as the unique ID
+    // Check if the user already exists
+    const userRef = db.ref('Users').child(phoneNumber);
+    const snapshot = await userRef.once('value');
+    
+    if (snapshot.exists()) {
+      return res.status(400).send('User already exists');
+    }
+
+    // Store user in the database
     await userRef.set({
       phoneNumber: phoneNumber,
-      password: password // Storing plain password (not recommended)
+      password: password, // Storing plain password (not recommended)
+      onlineStatus: 'offline',
+      lastSeen: null
     });
 
     res.status(201).send('User registered successfully');
   } catch (error) {
     console.error('Error registering user:', error);
     res.status(500).send('Error registering user');
+  }
+});
+
+// Login route for existing users
+app.post('/api/login', async (req, res) => {
+  const { phoneNumber, password } = req.body;
+
+  if (!phoneNumber || !password) {
+    return res.status(400).send('Phone number and password are required');
+  }
+
+  try {
+    const userRef = db.ref('Users').child(phoneNumber);
+    const snapshot = await userRef.once('value');
+
+    if (!snapshot.exists()) {
+      return res.status(404).send('User not found');
+    }
+
+    const user = snapshot.val();
+    if (user.password !== password) {
+      return res.status(401).send('Invalid password');
+    }
+
+    res.status(200).send('Login successful');
+  } catch (error) {
+    console.error('Error logging in user:', error);
+    res.status(500).send('Error logging in user');
+  }
+});
+
+// Update User Status (Online/Offline)
+app.post('/api/user-status', async (req, res) => {
+  const { phoneNumber, status } = req.body;
+
+  if (!phoneNumber || !status) {
+    return res.status(400).send('Phone number and status are required');
+  }
+
+  try {
+    const userRef = db.ref('Users').child(phoneNumber);
+
+    if (status === 'online') {
+      // Set user to online and update the timestamp for last seen when they go offline
+      await userRef.update({
+        onlineStatus: 'online',
+        lastSeen: null,  // Don't set last seen while online
+      });
+
+      // Automatically set the status to offline when the user disconnects
+      userRef.onDisconnect().update({
+        onlineStatus: 'offline',
+        lastSeen: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      res.status(200).send('User is online');
+    } else if (status === 'offline') {
+      // Manually set the status to offline and last seen time
+      await userRef.update({
+        onlineStatus: 'offline',
+        lastSeen: admin.database.ServerValue.TIMESTAMP,
+      });
+      res.status(200).send('User is offline');
+    } else {
+      return res.status(400).send('Invalid status');
+    }
+  } catch (error) {
+    console.error('Error updating user status:', error);
+    res.status(500).send('Error updating user status');
   }
 });
 
