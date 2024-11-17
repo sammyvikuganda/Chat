@@ -57,7 +57,7 @@ async function uploadImage(file) {
     });
 
     // Get the public URL of the uploaded image
-    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
     return imageUrl;
   } catch (error) {
     console.error('Error uploading image:', error);
