@@ -171,8 +171,8 @@ app.post('/api/user-status', async (req, res) => {
 app.post('/api/messages', upload.single('image'), async (req, res) => {
   const { to, from, message } = req.body;
 
-  if (!to || !from || !message) {
-    return res.status(400).send('To, from, and message fields are required');
+  if (!to || !from) {
+    return res.status(400).send('To and from fields are required');
   }
 
   try {
@@ -198,6 +198,11 @@ app.post('/api/messages', upload.single('image'), async (req, res) => {
       imageUrl = await uploadImage(req.file);
     }
 
+    // If neither message nor image exists, return an error
+    if (!message && !imageUrl) {
+      return res.status(400).send('Message or image is required');
+    }
+
     // If both users exist, proceed to send the message
     const newMessageRefFrom = fromRef.child('messages').push();
     const newMessageRefTo = toRef.child('messages').push();
@@ -205,9 +210,9 @@ app.post('/api/messages', upload.single('image'), async (req, res) => {
     const messageData = {
       to: to,
       from: from,
-      message: message,
+      message: message || '',  // If no message, set it to an empty string
       timestamp: new Date().toISOString(),
-      imageUrl: imageUrl,  // Include the image URL if available
+      imageUrl: imageUrl || null,  // Include the image URL if available
     };
 
     await newMessageRefFrom.set(messageData);
@@ -219,6 +224,7 @@ app.post('/api/messages', upload.single('image'), async (req, res) => {
     res.status(500).send('Error sending message');
   }
 });
+
 
 // Endpoint to fetch messages for a specific user
 app.get('/api/messages/:phoneNumber', async (req, res) => {
