@@ -1,19 +1,15 @@
-// Import dependencies
 const express = require('express');
-const admin = require('firebase-admin');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-require('dotenv').config();  // This is required to load environment variables from .env file
+const admin = require('firebase-admin');
 
-// Initialize the Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
-// Middleware
 app.use(bodyParser.json());
 app.use(cors());
 
-// Firebase Admin SDK Initialization using service account credentials
+// Firebase initialization (credentials are set in Vercel's environment variables)
 const serviceAccount = {
   type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
@@ -36,8 +32,6 @@ if (!admin.apps.length) {
 
 const db = admin.database();
 
-// Routes
-
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
@@ -55,13 +49,11 @@ app.post('/api/user-status', async (req, res) => {
     const userRef = db.ref('Users').child(phoneNumber);
 
     if (status === 'online') {
-      // Set user to online and update the timestamp for last seen when they go offline
       await userRef.update({
         onlineStatus: 'online',
-        lastSeen: null, // Don't set last seen while online
+        lastSeen: null,
       });
 
-      // Automatically set the status to offline when the user disconnects
       userRef.onDisconnect().update({
         onlineStatus: 'offline',
         lastSeen: admin.database.ServerValue.TIMESTAMP,
@@ -69,7 +61,6 @@ app.post('/api/user-status', async (req, res) => {
 
       res.status(200).send('User is online');
     } else if (status === 'offline') {
-      // Manually set the status to offline and last seen time
       await userRef.update({
         onlineStatus: 'offline',
         lastSeen: admin.database.ServerValue.TIMESTAMP,
@@ -93,7 +84,6 @@ app.post('/api/messages', async (req, res) => {
   }
 
   try {
-    // Store message under the "messages" node for the sending user (from) and receiving user (to)
     const fromRef = db.ref('Users').child(from).child('messages');
     const toRef = db.ref('Users').child(to).child('messages');
 
@@ -104,7 +94,7 @@ app.post('/api/messages', async (req, res) => {
       to: to,
       from: from,
       message: message,
-      timestamp: new Date().toISOString(), // Timestamp for when the message was sent
+      timestamp: new Date().toISOString(),
     };
 
     await newMessageRefFrom.set(messageData);
@@ -126,10 +116,8 @@ app.get('/api/messages/:phoneNumber', async (req, res) => {
   }
 
   try {
-    // Reference to the user's messages in the database
     const userMessagesRef = db.ref('Users').child(phoneNumber).child('messages');
 
-    // Get all messages for the user
     const snapshot = await userMessagesRef.once('value');
     const messages = [];
 
@@ -149,6 +137,6 @@ app.get('/api/messages/:phoneNumber', async (req, res) => {
 });
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
