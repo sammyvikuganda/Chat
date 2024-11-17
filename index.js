@@ -2,7 +2,10 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const admin = require('firebase-admin');
+const multer = require('multer');
+const path = require('path');
 
+// Initialize the app and set up Firebase
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -26,16 +29,40 @@ const serviceAccount = {
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+    databaseURL: process.env.FIREBASE_DATABASE_URL,
   });
 }
 
 const db = admin.database();
+const bucket = admin.storage().bucket();
+
+// Configure multer for file upload
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 // Basic route to confirm server is running
 app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
 });
+
+// Function to upload an image to Firebase Storage
+async function uploadImage(file) {
+  const fileName = `${Date.now()}_${file.originalname}`;
+  const fileUpload = bucket.file(fileName);
+
+  try {
+    await fileUpload.save(file.buffer, {
+      contentType: file.mimetype,
+    });
+
+    // Get the public URL of the uploaded image
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    return imageUrl;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw new Error('Error uploading image');
+  }
+}
 
 // Endpoint to create a new user
 app.post('/api/users', async (req, res) => {
@@ -139,8 +166,8 @@ app.post('/api/user-status', async (req, res) => {
   }
 });
 
-// Message route to send messages
-app.post('/api/messages', async (req, res) => {
+// Message route to send messages with images
+app.post('/api/messages', upload.single('image'), async (req, res) => {
   const { to, from, message } = req.body;
 
   if (!to || !from || !message) {
@@ -164,6 +191,12 @@ app.post('/api/messages', async (req, res) => {
       return res.status(404).send('Sender is not registered');
     }
 
+    // Handle image upload if exists
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadImage(req.file);
+    }
+
     // If both users exist, proceed to send the message
     const newMessageRefFrom = fromRef.child('messages').push();
     const newMessageRefTo = toRef.child('messages').push();
@@ -173,6 +206,7 @@ app.post('/api/messages', async (req, res) => {
       from: from,
       message: message,
       timestamp: new Date().toISOString(),
+      imageUrl: imageUrl,  // Include the image URL if available
     };
 
     await newMessageRefFrom.set(messageData);
@@ -184,8 +218,6 @@ app.post('/api/messages', async (req, res) => {
     res.status(500).send('Error sending message');
   }
 });
-
-
 
 // Endpoint to fetch messages for a specific user
 app.get('/api/messages/:phoneNumber', async (req, res) => {
