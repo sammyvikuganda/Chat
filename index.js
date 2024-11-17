@@ -37,6 +37,70 @@ app.get('/', (req, res) => {
   res.send('Welcome to the chat server!');
 });
 
+// Endpoint to create a new user
+app.post('/api/users', async (req, res) => {
+  const { phoneNumber, password } = req.body;
+
+  if (!phoneNumber || !password) {
+    return res.status(400).send('Phone number and password are required');
+  }
+
+  try {
+    const userRef = db.ref('Users').child(phoneNumber);
+
+    // Check if the user already exists
+    const snapshot = await userRef.once('value');
+    if (snapshot.exists()) {
+      return res.status(400).send('User already exists');
+    }
+
+    // Create new user
+    await userRef.set({
+      phoneNumber,
+      password,
+    });
+
+    res.status(201).send('User created successfully');
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).send('Error creating user');
+  }
+});
+
+// Login User
+app.post('/api/login', async (req, res) => {
+  const { phoneNumber, password } = req.body;
+
+  if (!phoneNumber || !password) {
+    return res.status(400).send('Phone number and password are required');
+  }
+
+  try {
+    const userRef = db.ref('Users').child(phoneNumber);
+
+    // Check if the user exists
+    const snapshot = await userRef.once('value');
+    if (!snapshot.exists()) {
+      return res.status(404).send('User not found');
+    }
+
+    const userData = snapshot.val();
+
+    // Verify password (as stored in plaintext in this case)
+    if (userData.password === password) {
+      return res.status(200).json({
+        success: true,
+        phoneNumber: userData.phoneNumber,
+      });
+    } else {
+      return res.status(401).send('Invalid credentials');
+    }
+  } catch (error) {
+    console.error('Error verifying login:', error);
+    res.status(500).send('Error verifying login');
+  }
+});
+
 // Update User Status (Online/Offline)
 app.post('/api/user-status', async (req, res) => {
   const { phoneNumber, status } = req.body;
