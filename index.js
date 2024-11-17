@@ -30,6 +30,7 @@ if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     databaseURL: process.env.FIREBASE_DATABASE_URL,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET, // Specify the storage bucket here
   });
 }
 
@@ -242,7 +243,7 @@ app.get('/api/messages/:phoneNumber', async (req, res) => {
     }
 
     res.status(200).json(messages);
-  } catch (error) {
+  } catch (error)    {
     console.error('Error fetching messages:', error);
     res.status(500).send('Error fetching messages');
   }
