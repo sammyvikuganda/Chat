@@ -148,11 +148,25 @@ app.post('/api/messages', async (req, res) => {
   }
 
   try {
-    const fromRef = db.ref('Users').child(from).child('messages');
-    const toRef = db.ref('Users').child(to).child('messages');
+    // Check if the recipient exists in the database
+    const toRef = db.ref('Users').child(to);
+    const toSnapshot = await toRef.once('value');
 
-    const newMessageRefFrom = fromRef.push();
-    const newMessageRefTo = toRef.push();
+    if (!toSnapshot.exists()) {
+      return res.status(404).send('This phone number is not on EyeNet');
+    }
+
+    // Check if the sender exists in the database
+    const fromRef = db.ref('Users').child(from);
+    const fromSnapshot = await fromRef.once('value');
+
+    if (!fromSnapshot.exists()) {
+      return res.status(404).send('Sender is not registered');
+    }
+
+    // If both users exist, proceed to send the message
+    const newMessageRefFrom = fromRef.child('messages').push();
+    const newMessageRefTo = toRef.child('messages').push();
 
     const messageData = {
       to: to,
@@ -170,6 +184,8 @@ app.post('/api/messages', async (req, res) => {
     res.status(500).send('Error sending message');
   }
 });
+
+
 
 // Endpoint to fetch messages for a specific user
 app.get('/api/messages/:phoneNumber', async (req, res) => {
