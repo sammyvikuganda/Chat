@@ -169,60 +169,65 @@ app.post('/api/user-status', async (req, res) => {
 
 // Message route to send messages with images
 app.post('/api/messages', upload.single('image'), async (req, res) => {
-  const { to, from, message } = req.body;
+    const { to, from, message } = req.body;
 
-  if (!to || !from) {
-    return res.status(400).send('To and from fields are required');
-  }
-
-  try {
-    // Check if the recipient exists in the database
-    const toRef = db.ref('Users').child(to);
-    const toSnapshot = await toRef.once('value');
-
-    if (!toSnapshot.exists()) {
-      return res.status(404).send('This phone number is not on EyeNet');
+    if (!to || !from) {
+        return res.status(400).send('To and from fields are required');
     }
 
-    // Check if the sender exists in the database
-    const fromRef = db.ref('Users').child(from);
-    const fromSnapshot = await fromRef.once('value');
+    try {
+        // Check if the recipient exists in the database
+        const toRef = db.ref('Users').child(to);
+        const toSnapshot = await toRef.once('value');
 
-    if (!fromSnapshot.exists()) {
-      return res.status(404).send('Sender is not registered');
+        if (!toSnapshot.exists()) {
+            return res.status(404).send('This phone number is not on EyeNet');
+        }
+
+        // Check if the sender exists in the database
+        const fromRef = db.ref('Users').child(from);
+        const fromSnapshot = await fromRef.once('value');
+
+        if (!fromSnapshot.exists()) {
+            return res.status(404).send('Sender is not registered');
+        }
+
+        // Handle image upload if exists
+        let imageUrl = null;
+        if (req.file) {
+            imageUrl = await uploadImage(req.file);
+        }
+
+        // If neither message nor image exists, return an error
+        if (!message && !imageUrl) {
+            return res.status(400).send('Message or image is required');
+        }
+
+        // If both users exist, proceed to send the message
+        const newMessageRefFrom = fromRef.child('messages').push();
+        const newMessageRefTo = toRef.child('messages').push();
+
+        const messageData = {
+            to: to,
+            from: from,
+            message: message || '',  // If no message, set it to an empty string
+            timestamp: new Date().toISOString(),
+            imageUrl: imageUrl || null,  // Include the image URL if available
+        };
+
+        // Save the reply message content if it exists
+        if (req.body.replyMessage) {
+            messageData.replyMessage = req.body.replyMessage;
+        }
+
+        await newMessageRefFrom.set(messageData);
+        await newMessageRefTo.set(messageData);
+
+        res.status(201).send('Message sent successfully');
+    } catch (error) {
+        console.error('Error sending message:', error);
+        res.status(500).send('Error sending message');
     }
-
-    // Handle image upload if exists
-    let imageUrl = null;
-    if (req.file) {
-      imageUrl = await uploadImage(req.file);
-    }
-
-    // If neither message nor image exists, return an error
-    if (!message && !imageUrl) {
-      return res.status(400).send('Message or image is required');
-    }
-
-    // If both users exist, proceed to send the message
-    const newMessageRefFrom = fromRef.child('messages').push();
-    const newMessageRefTo = toRef.child('messages').push();
-
-    const messageData = {
-      to: to,
-      from: from,
-      message: message || '',  // If no message, set it to an empty string
-      timestamp: new Date().toISOString(),
-      imageUrl: imageUrl || null,  // Include the image URL if available
-    };
-
-    await newMessageRefFrom.set(messageData);
-    await newMessageRefTo.set(messageData);
-
-    res.status(201).send('Message sent successfully');
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).send('Error sending message');
-  }
 });
 
 
