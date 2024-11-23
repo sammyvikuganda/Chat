@@ -255,6 +255,82 @@ app.get('/api/messages/:phoneNumber', async (req, res) => {
   }
 });
 
+
+
+// Endpoint to upload a profile picture
+app.post('/api/users/upload-profile-picture', upload.single('profilePicture'), async (req, res) => {
+  const { phoneNumber } = req.body;
+
+  if (!phoneNumber || !req.file) {
+    return res.status(400).send('Phone number and profile picture are required');
+  }
+
+  try {
+    const userRef = db.ref('Users').child(phoneNumber);
+
+    // Check if the user exists
+    const snapshot = await userRef.once('value');
+    if (!snapshot.exists()) {
+      return res.status(404).send('User not found');
+    }
+
+    // Upload the profile picture to Firebase Storage
+    const imageUrl = await uploadImage(req.file);
+
+    // Update the user's record with the profile picture URL
+    await userRef.update({ profilePicture: imageUrl });
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile picture updated successfully',
+      imageUrl,
+    });
+  } catch (error) {
+    console.error('Error uploading profile picture:', error);
+    res.status(500).send('Error uploading profile picture');
+  }
+});
+
+
+
+// Endpoint to fetch user details including profile picture
+app.get('/api/users/:phoneNumber', async (req, res) => {
+  const { phoneNumber } = req.params;
+
+  if (!phoneNumber) {
+    return res.status(400).send('Phone number is required');
+  }
+
+  try {
+    const userRef = db.ref('Users').child(phoneNumber);
+
+    // Fetch user details
+    const snapshot = await userRef.once('value');
+
+    if (!snapshot.exists()) {
+      return res.status(404).send('User not found');
+    }
+
+    const userData = snapshot.val();
+
+    res.status(200).json({
+      success: true,
+      user: {
+        phoneNumber: userData.phoneNumber,
+        profilePicture: userData.profilePicture || null,
+        onlineStatus: userData.onlineStatus || 'offline',
+        lastSeen: userData.lastSeen || null,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).send('Error fetching user details');
+  }
+});
+
+
+
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
