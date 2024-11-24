@@ -331,6 +331,66 @@ app.get('/api/users/:phoneNumber', async (req, res) => {
 
 
 
+// Endpoint to delete a message for both users
+app.post('/api/messages/delete', async (req, res) => {
+  const { messageId, to, from } = req.body;
+
+  if (!messageId || !to || !from) {
+    return res.status(400).send('Message ID, to, and from fields are required');
+  }
+
+  try {
+    // Get the references for both sender and recipient message histories
+    const fromRef = db.ref('Users').child(from).child('messages');
+    const toRef = db.ref('Users').child(to).child('messages');
+
+    // Fetch the sender's messages and find the specific message
+    const fromSnapshot = await fromRef.once('value');
+    let messageFound = false;
+
+    fromSnapshot.forEach((childSnapshot) => {
+      if (childSnapshot.key === messageId) {
+        // Update the message to indicate it was deleted
+        fromRef.child(messageId).update({
+          message: 'This message was deleted',
+          timestamp: new Date().toISOString(),  // Optional: Update timestamp
+        });
+        messageFound = true;
+      }
+    });
+
+    if (!messageFound) {
+      return res.status(404).send('Message not found in sender\'s chat');
+    }
+
+    // Fetch the recipient's messages and find the same message
+    const toSnapshot = await toRef.once('value');
+    messageFound = false;
+
+    toSnapshot.forEach((childSnapshot) => {
+      if (childSnapshot.key === messageId) {
+        // Update the message to indicate it was deleted
+        toRef.child(messageId).update({
+          message: 'This message was deleted',
+          timestamp: new Date().toISOString(),  // Optional: Update timestamp
+        });
+        messageFound = true;
+      }
+    });
+
+    if (!messageFound) {
+      return res.status(404).send('Message not found in recipient\'s chat');
+    }
+
+    res.status(200).send('Message deleted for both users');
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).send('Error deleting message');
+  }
+});
+
+
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
