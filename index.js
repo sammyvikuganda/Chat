@@ -203,11 +203,11 @@ app.post('/api/messages', upload.single('image'), async (req, res) => {
       return res.status(400).send('Message or image is required');
     }
 
-    // If both users exist, proceed to send the message
-    const newMessageRefFrom = fromRef.child('messages').push();
-    const newMessageRefTo = toRef.child('messages').push();
+    // Generate a fixed messageId for both sender and receiver
+    const messageId = `EYENET${Date.now()}`;
 
     const messageData = {
+      messageId, // Add the consistent message ID
       to: to,
       from: from,
       message: message || '',  // If no message, set it to an empty string
@@ -215,15 +215,21 @@ app.post('/api/messages', upload.single('image'), async (req, res) => {
       imageUrl: imageUrl || null,  // Include the image URL if available
     };
 
-    await newMessageRefFrom.set(messageData);
-    await newMessageRefTo.set(messageData);
+    // Store the message in both sender's and recipient's records using the same ID
+    await fromRef.child('messages').child(messageId).set(messageData);
+    await toRef.child('messages').child(messageId).set(messageData);
 
-    res.status(201).send('Message sent successfully');
+    res.status(201).json({
+      success: true,
+      message: 'Message sent successfully',
+      messageId, // Return the consistent message ID to the client
+    });
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).send('Error sending message');
   }
 });
+
 
 
 // Endpoint to fetch messages for a specific user
